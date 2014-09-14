@@ -6,7 +6,7 @@
  * Released under the MIT license
  * http://jquery.org/license
  *
- * Date: 2014-09-11T23:26Z
+ * Date: 2014-09-14T11:40Z
  */
 
 (function( window ) {
@@ -2498,7 +2498,7 @@ QUnit.done(function( details ) {
 
 	if ( config.altertitle && defined.document && document.title ) {
 
-		// show âœ? for good, âœ? for bad suite result in title
+		// show âœ– for good, âœ” for bad suite result in title
 		// use escape sequences in case file gets loaded with non-utf-8-charset
 		document.title = [
 			( details.failed ? "\u2716" : "\u2714" ),
