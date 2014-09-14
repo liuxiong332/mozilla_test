@@ -42,8 +42,32 @@
 			return this._port;
 		}
 	};
-	var serverSocket = new ServerSocket;
-	 
+
+	// (function() {
+	// 	var serverSocketListener = {
+	// 		onSocketAccepted: function(serverSocket, transport) {
+	// 			console.log("client connected");
+	// 		}
+	// 	};
+	// 	var serverSocket = new ServerSocket(serverSocketListener);
+	// 	serverSocket.create();
+	// }());
+	
+	(function() {
+		var createNewLocalSocket = function(port) {
+			var socketTransportService = 
+			Components.classes["@mozilla.org/network/socket-transport-service;1"]
+		    	.getService(Components.interfaces.nsISocketTransportService);
+		    return socketTransportService.createTransport(null, 0,
+		    	 'localhost', port, null);
+		};
+		var socket = createNewLocalSocket(8888);
+		var poolOutputStream = socket.openOutputStream(0, 0, 0);
+
+		var helloMessage = "Hello World";
+    	poolOutputStream.write(helloMessage, helloMessage.length);
+    	poolOutputStream.close();
+	}());
 	
 	//analyze the receive data, and get the package
 	// the format of data package is started by "mozilla_test" UTF8 string, 
