@@ -1,1 +1,1 @@
-"%ProgramFiles(x86)%\Mozilla Thunderbird\Thunderbird.exe" -chrome chrome://mochatest/content/qunit.html -jsconsole
+"%ProgramFiles(x86)%\Mozilla Thunderbird\Thunderbird.exe" -chrome chrome://mochatest/content/index.html -jsconsole
