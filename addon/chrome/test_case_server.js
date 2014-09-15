@@ -18,8 +18,8 @@
 		return prefService.getBranch(prefName);
 	}
 
-	function ServerSocket(listener) {
-		this._listener = listener;
+	function ServerSocket(listenerFactory) {
+		this._listenerFactory = listenerFactory;
 		this._port = 8888;
 		this._serverSocket = null;
 	}
@@ -32,17 +32,22 @@
 			if( prefBranch.prefHasUserValue('port') )
 				this._port = prefBranch.getIntPref('port');
 			serverSocket.init(this._port, true, -1);
-			serverSocket.asyncListen(this._listener);
+			serverSocket.asyncListen(this);
 		},
 		close: function() {
 			this._serverSocket.close();
 		},
 		getPort: function() {
 			return this._port;
+		},
+		onSocketAccepted: function(serverSocket, transport) {
+			var listener = this._listenerFactory();
+			listener.onSocketAccepted(serverSocket, transport);
+		//	serverSocket.asyncListen(this);
 		}
 	};
 
-	function ServerSocketListener(acceptCallback, inputCallback) {
+	function ServerSocketListener() {
 		function getMainThread() {
 			return Cc['@mozilla.org/thread-manager;1'].getService().mainThread;
 		}
@@ -50,26 +55,38 @@
 		this._output = null;	//nsIOutputStream
 
 		this._acceptCallback = acceptCallback;
-		this._inputStreamCallback = inputCallback;
+		this._inputStreamCallback = null;
 		this._mainThread = getMainThread();
 		this._transport = null;
 	}
 	ServerSocketListener.prototype = {
+		processSocket: function() {
+			var response = new ActionResponse(this._output);
+			var actionRunner = new ActionRunner(this, response);
+			var dataAnalyzer = new DataPackageAnalyzer(actionRunner);
+			this._inputStreamCallback = dataAnalyzer;
+		},
 		onSocketAccepted: function(serverSocket, transport) {
 			this._transport = transport;
-			this._input = transport.openInputStream(0, 0, 0).QueryInterface(
-				Ci.nsIAsyncInputStream);
+			this._openInputStream();
 			this._output = transport.openOutputStream(0, 0, 0).QueryInterface(
 				Ci.nsIAsyncOutputStream);
 
-			this._acceptCallback.onSocketAccepted(this);
+			processSocket();
 			this.inputStreamAsyncWait();
 		},
 
 		inputStreamAsyncWait: function() {
 			this._input.asyncWait(this._inputStreamCallback, 0, 0, this._mainThread);
 		},
-
+		_openInputStream: function() {
+			this._input = transport.openInputStream(0, 0, 0).QueryInterface(
+				Ci.nsIAsyncInputStream);
+		},
+		resetRead: function() {
+			this._openInputStream();
+			this.inputStreamAsyncWait();
+		},
 		getOutputStream: function() {
 			return this._output;
 		},
@@ -100,7 +117,8 @@
 	/*analyze the receive data, and get the package
 	  the format of data package is started by "mozilla_test" UTF8 string,
 	  then 4 bytes of byte number which is the rest of bytes. */
-	function DataPackageAnalyzer(listener) {
+	function DataPackageAnalyzer(socket, listener) {
+		this._socket = socket;
 		this._analyzeState = DataPackageAnalyzer.STATE_NEED_HEADER;
 		this._dataSize = 0;
 		this._listener = listener;
@@ -158,10 +176,15 @@
 						}
 					}
 				}
-				binaryInStream.close();
 			} catch(e) {
 				if(!(typeof e === 'object' && e.result === Cr.NS_BASE_STREAM_CLOSED))
 					throw e;
+			} finally {
+				//no mater auto close or normal read, we all close the stream
+				binaryInStream.close();
+				stream.close();
+				if(this._socket)
+					this._socket.resetRead();
 			}
 		}
 	};
@@ -182,10 +205,13 @@
 		}
 	};
 
-
-
-	function ActionRunner(actionListener) {
+	function ActionRunner(socket, actionListener) {
 		this._listener = actionListener;
+		this.actionList = {
+			disconnect: function() {
+				socket.close();
+			}
+		};
 	}
 	/*run the specific js file by the file url, the uri can be
 	  chrome:, resource: or file: URL */
@@ -226,7 +252,8 @@
 			var action = obj.action;
 			var res = false;
 			if(action) {
-				var actionFunc = ActionRunner.actionList[action];
+				var actionFunc = ActionRunner.actionList[action]
+					|| this.actionList[action];
 				if( actionFunc && actionFunc(obj.args) )
 					res = true;
 			}
@@ -257,9 +284,6 @@
 		binaryOutStream.close();
 	};
 	ActionResponse.prototype = {
-		onSocketAccepted: function(socket) {
-			this._outStream = socket.getOutputStream();
-		}
 		onActionOk: function(obj) {
 			var okResponse = {
 				action: obj.action,
@@ -277,11 +301,10 @@
 	};
 
 	function runServer() {
-		var response = new ActionResponse;
-		var actionRunner = new ActionRunner(response);
-		var dataAnalyzer = new DataPackageAnalyzer(actionRunner);
-		var socketListener = new ServerSocketListener(response, dataAnalyzer);
-		var serverSocket = new ServerSocket(socketListener);
+		function socketFactory() {
+			return new ServerSocketListener;
+		}
+		var serverSocket = new ServerSocket(socketFactory);
 		serverSocket.create();
 	}
 
@@ -289,4 +312,5 @@
 	QUnit.DataPackageAnalyzer = DataPackageAnalyzer;
 	QUnit.strConverter = strConverter;
 	QUnit.ActionRunner = ActionRunner;
+	QUnit.runServer = runServer;
 }());

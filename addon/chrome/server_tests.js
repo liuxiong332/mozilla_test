@@ -9,7 +9,9 @@ QUnit.createNewLocalSocket = function(port) {
 };
 
 QUnit.createClientAndServer = function(listener) {
-	var serverSocket = new QUnit.ServerSocket(listener);
+	var serverSocket = new QUnit.ServerSocket(function() {
+		return listener;
+	});
 	serverSocket.create();
 	var port = listener.port = serverSocket.getPort();
 	var clientSocket = listener.clientSocket =
@@ -133,7 +135,7 @@ QUnit.asyncTest("dataPackageAnalyzer test", function(assert) {
 	var inputListener = {
 		finalize: null,
 		onInputStreamReady: function(inStream) {
-			var analyzer = new QUnit.DataPackageAnalyzer(dataListener);
+			var analyzer = new QUnit.DataPackageAnalyzer(null, dataListener);
 			analyzer.onInputStreamReady(inStream);
 			this.finalize();
 		}
@@ -187,4 +189,8 @@ QUnit.test('action object parse', function(assert) {
 QUnit.test('test JSRun', function(assert) {
 	expect(0);
 	QUnit.ActionRunner.runJSFile('chrome://mozilla_test/content/js_res.js');
-})
+});
+
+QUnit.test('run server test', function(assert) {
+	QUnit.runServer();
+});
