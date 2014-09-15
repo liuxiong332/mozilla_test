@@ -42,18 +42,60 @@
 		}
 	};
 
-	var strConverter = {};
-	strConverter.converter = (function() {
-		var uConverter = Cc['@mozilla.org/intl/scriptableunicodeconverter']
-    	.getService(Ci.nsIScriptableUnicodeConverter);
-    uConverter.charset = 'utf-8';
-    return uConverter;
-  }());
-	strConverter.convertFromByteArray = function(byteArray) {
-		return this.converter.convertFromByteArray(byteArray, byteArray.length);
+	function ServerSocketListener(acceptCallback, inputCallback) {
+		function getMainThread() {
+			return Cc['@mozilla.org/thread-manager;1'].getService().mainThread;
+		}
+		this._input = null;		//nsIInputStream
+		this._output = null;	//nsIOutputStream
+
+		this._acceptCallback = acceptCallback;
+		this._inputStreamCallback = inputCallback;
+		this._mainThread = getMainThread();
+		this._transport = null;
+	}
+	ServerSocketListener.prototype = {
+		onSocketAccepted: function(serverSocket, transport) {
+			this._transport = transport;
+			this._input = transport.openInputStream(0, 0, 0).QueryInterface(
+				Ci.nsIAsyncInputStream);
+			this._output = transport.openOutputStream(0, 0, 0).QueryInterface(
+				Ci.nsIAsyncOutputStream);
+
+			this._acceptCallback.onSocketAccepted(this);
+			this.inputStreamAsyncWait();
+		},
+
+		inputStreamAsyncWait: function() {
+			this._input.asyncWait(this._inputStreamCallback, 0, 0, this._mainThread);
+		},
+
+		getOutputStream: function() {
+			return this._output;
+		},
+		getInputStream: function() {
+			return this._input;
+		},
+		close: function() {
+			this._input.close();
+			this._output.close();
+			this._transport.close();
+		}
 	};
-	strConverter.convertToByteArray = function(str) {
-		return this.converter.convertToByteArray(str);
+
+	var strConverter = {
+		converter: (function() {
+			var uConverter = Cc['@mozilla.org/intl/scriptableunicodeconverter']
+	    	.getService(Ci.nsIScriptableUnicodeConverter);
+	    uConverter.charset = 'utf-8';
+	    return uConverter;
+	  }()),
+		convertFromByteArray: function(byteArray) {
+			return this.converter.convertFromByteArray(byteArray, byteArray.length);
+		},
+		convertToByteArray: function(str) {
+			return this.converter.convertToByteArray(str);
+		}
 	};
 	/*analyze the receive data, and get the package
 	  the format of data package is started by "mozilla_test" UTF8 string,
@@ -117,12 +159,11 @@
 					}
 				}
 				binaryInStream.close();
-				stream.close();
 			} catch(e) {
 				if(!(typeof e === 'object' && e.result === Cr.NS_BASE_STREAM_CLOSED))
 					throw e;
 			}
-		},
+		}
 	};
 
 
@@ -141,43 +182,111 @@
 		}
 	};
 
-	function ServerSocketListener(inputCallback) {
-		function getMainThread() {
-			return Cc['@mozilla.org/thread-manager;1'].getService().mainThread;
-		}
-		this._input = null;		//nsIInputStream
 
-		this._output = null;	//nsIOutputStream
 
-		this._inputStreamCallback = inputCallback;
-		this._mainThread = getMainThread();
-		this._transport = null;
+	function ActionRunner(actionListener) {
+		this._listener = actionListener;
 	}
-	ServerSocketListener.prototype = {
-		onSocketAccepted: function(serverSocket, transport) {
-			this._transport = transport;
-			this._input = transport.openInputStream(0, 0, 0).QueryInterface(
-				Ci.nsIAsyncInputStream);
-			this._output = transport.openOutputStream(0, 0, 0).QueryInterface(
-				Ci.nsIAsyncOutputStream);
+	/*run the specific js file by the file url, the uri can be
+	  chrome:, resource: or file: URL */
+	ActionRunner.runJSFile = function(fileUrl) {
+		var loader = Cc['@mozilla.org/moz/jssubscript-loader;1']
+    	.getService(Ci.mozIJSSubScriptLoader);
+    loader.loadSubScript(fileUrl);
+	};
 
-			this.inputStreamAsyncWait();
-		},
-
-		inputStreamAsyncWait: function() {
-			this._input.asyncWait(this._inputStreamCallback, 0, 0, this._mainThread);
-		},
-
-		getOutputStream: function() {
-			return this._output;
-		},
-		getInputStream: function() {
-			return this._input;
+	ActionRunner.runFiles = function(files) {
+		var length = files.length;
+		for(var i = 0; i < length; ++i) {
+			this.runJSFile(files[i]);
 		}
 	};
 
-	var global = (function() { return this; }());
-	global.ServerSocket = ServerSocket;
-	global.DataPackageAnalyzer = DataPackageAnalyzer;
-	global.strConverter = strConverter;
+	ActionRunner.actionList = {
+		start: function() {
+			QUnit.start();
+			return true;
+		},
+		addTest: function(args) {
+			var baseDir = args.baseDir;
+			var files = args.files;
+			if(!(files && Array.isArray(files))) 	return false;
+			if(baseDir) {
+				if(!/\/$/.test(baseDir))	baseDir += '/';
+				var length = files.length;
+				for(var i = 0; i < length; ++i)
+					files[i] = baseDir + files[i];
+			}
+			ActionRunner.runFiles(files);
+			return true;
+		}
+	};
+	ActionRunner.prototype = {
+		runAction: function(obj) {
+			var action = obj.action;
+			var res = false;
+			if(action) {
+				var actionFunc = ActionRunner.actionList[action];
+				if( actionFunc && actionFunc(obj.args) )
+					res = true;
+			}
+			var listener = this._listener;
+			listener && (res? listener.onActionOk(obj): listener.onActionFail(obj));
+		},
+	 	onDataReady: function() {
+			return this.runAction;
+		}
+	}
+
+	function  ActionResponse(outStream) {
+		this._outStream = outStream;
+	}
+	ActionResponse.writePackageData = function(obj, binaryOutStream) {
+		var headerBytes= strConverter.convertToByteArray('mozilla_test');
+		binaryOutStream.writeByteArray(headerBytes, headerBytes.length);
+
+		var bodyBytes = strConverter.convertToByteArray(JSON.stringify(obj));
+		binaryOutStream.write32(bodyBytes.length);
+		binaryOutStream.writeByteArray(bodyBytes, bodyBytes.length);
+	};
+	ActionResponse.writeResponse = function(outStream, obj) {
+		var binaryOutStream = QUnit.Cc['@mozilla.org/binaryoutputstream;1']
+				.createInstance(QUnit.Ci.nsIBinaryOutputStream);
+		binaryOutStream.setOutputStream(outStream);
+		ActionResponse.writePackageData(obj, binaryOutStream);
+		binaryOutStream.close();
+	};
+	ActionResponse.prototype = {
+		onSocketAccepted: function(socket) {
+			this._outStream = socket.getOutputStream();
+		}
+		onActionOk: function(obj) {
+			var okResponse = {
+				action: obj.action,
+				status: 'ok'
+			};
+			ActionResponse.writeResponse(this._outStream, okResponse);
+		},
+		onActionFail: function(obj) {
+			var failResponse = {
+				action: obj.action,
+				status: 'fail'
+			};
+			ActionResponse.writeResponse(this._outStream, failResponse);
+		}
+	};
+
+	function runServer() {
+		var response = new ActionResponse;
+		var actionRunner = new ActionRunner(response);
+		var dataAnalyzer = new DataPackageAnalyzer(actionRunner);
+		var socketListener = new ServerSocketListener(response, dataAnalyzer);
+		var serverSocket = new ServerSocket(socketListener);
+		serverSocket.create();
+	}
+
+	QUnit.ServerSocket = ServerSocket;
+	QUnit.DataPackageAnalyzer = DataPackageAnalyzer;
+	QUnit.strConverter = strConverter;
+	QUnit.ActionRunner = ActionRunner;
 }());

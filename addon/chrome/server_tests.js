@@ -9,7 +9,7 @@ QUnit.createNewLocalSocket = function(port) {
 };
 
 QUnit.createClientAndServer = function(listener) {
-	var serverSocket = new ServerSocket(listener);
+	var serverSocket = new QUnit.ServerSocket(listener);
 	serverSocket.create();
 	var port = listener.port = serverSocket.getPort();
 	var clientSocket = listener.clientSocket =
@@ -53,7 +53,7 @@ QUnit.initClientandServerReady = function(inputListener, outputListener) {
 QUnit.Cc = Components.classes;
 QUnit.Ci = Components.interfaces;
 
-QUnit.asyncTest('createServerSocket is successful', function( assert ) {
+QUnit.asyncTest('createServerSocket is successful', function(assert) {
 	var serverSocketListener = {
 		port: 0,
 		clientSocket: null,
@@ -74,7 +74,7 @@ QUnit.asyncTest('createServerSocket is successful', function( assert ) {
 });
 
 
-QUnit.asyncTest('utf8 read and write', function( assert ) {
+QUnit.asyncTest('utf8 read and write', function(assert) {
 	var str = "Hello World";
 
 	//when the read is available, we read string from the server buffer
@@ -110,14 +110,14 @@ QUnit.asyncTest('utf8 read and write', function( assert ) {
 	QUnit.initClientandServerReady(inputReadyListener, outputReadyListener);
 });
 
-QUnit.asyncTest("dataPackageAnalyzer test", function( assert ) {
+QUnit.asyncTest("dataPackageAnalyzer test", function(assert) {
 	var objList = [ { obj: 'hello' }, { obj: 'world' } ];
 
 	function writePackageData(obj, binaryOutStream) {
-		var headerBytes= strConverter.convertToByteArray('mozilla_test');
+		var headerBytes= QUnit.strConverter.convertToByteArray('mozilla_test');
 		binaryOutStream.writeByteArray(headerBytes, headerBytes.length);
 
-		var bodyBytes = strConverter.convertToByteArray(JSON.stringify(obj));
+		var bodyBytes = QUnit.strConverter.convertToByteArray(JSON.stringify(obj));
 		binaryOutStream.write32(bodyBytes.length);
 		binaryOutStream.writeByteArray(bodyBytes, bodyBytes.length);
 	}
@@ -133,7 +133,7 @@ QUnit.asyncTest("dataPackageAnalyzer test", function( assert ) {
 	var inputListener = {
 		finalize: null,
 		onInputStreamReady: function(inStream) {
-			var analyzer = new DataPackageAnalyzer(dataListener);
+			var analyzer = new QUnit.DataPackageAnalyzer(dataListener);
 			analyzer.onInputStreamReady(inStream);
 			this.finalize();
 		}
@@ -154,3 +154,37 @@ QUnit.asyncTest("dataPackageAnalyzer test", function( assert ) {
 	}
 	QUnit.initClientandServerReady(inputListener, outputListener);
 });
+
+QUnit.test('action object parse', function(assert) {
+	var ActionRunner = QUnit.ActionRunner;
+	var actionRunner = new ActionRunner;
+	var fileList = ['file1', 'file2', 'file3'];
+	var obj1 = {
+		action: 'addTest',
+		args: { files: fileList.slice(0) }
+	};
+
+	function	assertFiles(baseDir, files) {
+		assert.strictEqual(files.length, fileList.length);
+		var length = files.length;
+		for(var i = 0; i < length; ++i) {
+			assert.strictEqual(files[i], baseDir + fileList[i]);
+		}
+	}
+
+	ActionRunner.runFiles = assertFiles.bind(null, '');
+	actionRunner.runAction(obj1);
+
+	var baseDir = 'mozilla';
+	var obj2 = {
+		action: 'addTest',
+		args: { files: fileList.slice(0), baseDir: baseDir}
+	};
+	ActionRunner.runFiles = assertFiles.bind(null, baseDir + '/');
+	actionRunner.runAction(obj2);
+});
+
+QUnit.test('test JSRun', function(assert) {
+	expect(0);
+	QUnit.ActionRunner.runJSFile('chrome://mozilla_test/content/js_res.js');
+})
