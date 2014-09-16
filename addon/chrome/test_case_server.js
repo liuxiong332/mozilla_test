@@ -12,6 +12,12 @@
 	var Cu = Components.utils;
 	var Cr = Components.results;
 
+	function log(message) {
+		var console = Cc["@mozilla.org/consoleservice;1"]
+			.getService(Ci.nsIConsoleService);
+		console.logStringMessage(message);
+	}
+
 	function getPrefBranch(prefName) {
 		var prefService = Cc["@mozilla.org/preferences-service;1"]
 			.getService(Ci.nsIPrefService);
@@ -33,6 +39,7 @@
 				this._port = prefBranch.getIntPref('port');
 			serverSocket.init(this._port, true, -1);
 			serverSocket.asyncListen(this);
+			this._serverSocket = serverSocket;
 		},
 		close: function() {
 			this._serverSocket.close();
@@ -40,30 +47,33 @@
 		getPort: function() {
 			return this._port;
 		},
+		onAcceptedHook: function(listener) {},
 		onSocketAccepted: function(serverSocket, transport) {
 			var listener = this._listenerFactory();
 			listener.onSocketAccepted(serverSocket, transport);
+			this.onAcceptedHook(listener);
 		//	serverSocket.asyncListen(this);
 		}
 	};
 
 	function ServerSocketListener() {
-		function getMainThread() {
-			return Cc['@mozilla.org/thread-manager;1'].getService().mainThread;
-		}
 		this._input = null;		//nsIInputStream
 		this._output = null;	//nsIOutputStream
 
-		this._acceptCallback = acceptCallback;
 		this._inputStreamCallback = null;
-		this._mainThread = getMainThread();
 		this._transport = null;
+
+		this._closeListener = null;
 	}
+	ServerSocketListener.getMainThread = function() {
+		return Cc['@mozilla.org/thread-manager;1'].getService().mainThread;
+	};
+	ServerSocketListener.mainThread = ServerSocketListener.getMainThread();
 	ServerSocketListener.prototype = {
 		processSocket: function() {
 			var response = new ActionResponse(this._output);
 			var actionRunner = new ActionRunner(this, response);
-			var dataAnalyzer = new DataPackageAnalyzer(actionRunner);
+			var dataAnalyzer = new DataPackageAnalyzer(this, actionRunner);
 			this._inputStreamCallback = dataAnalyzer;
 		},
 		onSocketAccepted: function(serverSocket, transport) {
@@ -72,20 +82,18 @@
 			this._output = transport.openOutputStream(0, 0, 0).QueryInterface(
 				Ci.nsIAsyncOutputStream);
 
-			processSocket();
+			this.processSocket();
 			this.inputStreamAsyncWait();
 		},
 
 		inputStreamAsyncWait: function() {
-			this._input.asyncWait(this._inputStreamCallback, 0, 0, this._mainThread);
+			log('ServerSocketListener.inputStreamAsyncWait invoke');
+			this._input.asyncWait(this._inputStreamCallback, 0, 0,
+				ServerSocketListener.mainThread);
 		},
 		_openInputStream: function() {
-			this._input = transport.openInputStream(0, 0, 0).QueryInterface(
+			this._input = this._transport.openInputStream(0, 0, 0).QueryInterface(
 				Ci.nsIAsyncInputStream);
-		},
-		resetRead: function() {
-			this._openInputStream();
-			this.inputStreamAsyncWait();
 		},
 		getOutputStream: function() {
 			return this._output;
@@ -96,7 +104,12 @@
 		close: function() {
 			this._input.close();
 			this._output.close();
-			this._transport.close();
+			this._transport.close(0);
+			if(this._closeListener)
+				this._closeListener();
+		},
+		setCloseListener: function(listener) {
+			this._closeListener = listener;
 		}
 	};
 
@@ -148,6 +161,7 @@
 				var byteArray = binaryInStream.readByteArray(this._dataSize);
 				var str = strConverter.convertFromByteArray(byteArray);
 				var obj = JSON.parse(str);
+				log('analyze object: ' + QUnit.dump.parse(obj));
 				this._listener.onDataReady(obj);
 				this._analyzeState = DataPackageAnalyzer.STATE_NEED_HEADER;
 				return true;
@@ -177,15 +191,14 @@
 					}
 				}
 			} catch(e) {
-				if(!(typeof e === 'object' && e.result === Cr.NS_BASE_STREAM_CLOSED))
+				//end-of-file
+				if(typeof e === 'object' && e.result === Cr.NS_BASE_STREAM_CLOSED) {
+					return this._socket && this._socket.close();
+				} else
 					throw e;
-			} finally {
-				//no mater auto close or normal read, we all close the stream
-				binaryInStream.close();
-				stream.close();
-				if(this._socket)
-					this._socket.resetRead();
 			}
+			if(this._socket)
+				this._socket.inputStreamAsyncWait();
 		}
 	};
 
@@ -208,9 +221,10 @@
 	function ActionRunner(socket, actionListener) {
 		this._listener = actionListener;
 		this.actionList = {
-			disconnect: function() {
-				socket.close();
-			}
+			// disconnect: function() {
+			// 	alert('close');
+			// 	socket.close();
+			// }
 		};
 	}
 	/*run the specific js file by the file url, the uri can be
@@ -249,6 +263,7 @@
 	};
 	ActionRunner.prototype = {
 		runAction: function(obj) {
+			log('begin runAction');
 			var action = obj.action;
 			var res = false;
 			if(action) {
@@ -257,11 +272,12 @@
 				if( actionFunc && actionFunc(obj.args) )
 					res = true;
 			}
+			log('runAction res: ' + res);
 			var listener = this._listener;
 			listener && (res? listener.onActionOk(obj): listener.onActionFail(obj));
 		},
-	 	onDataReady: function() {
-			return this.runAction;
+	 	onDataReady: function(obj) {
+			return this.runAction(obj);
 		}
 	}
 
@@ -281,7 +297,6 @@
 				.createInstance(QUnit.Ci.nsIBinaryOutputStream);
 		binaryOutStream.setOutputStream(outStream);
 		ActionResponse.writePackageData(obj, binaryOutStream);
-		binaryOutStream.close();
 	};
 	ActionResponse.prototype = {
 		onActionOk: function(obj) {
@@ -289,7 +304,9 @@
 				action: obj.action,
 				status: 'ok'
 			};
+			log('ActionResponse write ok status to client');
 			ActionResponse.writeResponse(this._outStream, okResponse);
+			this._outStream.flush();
 		},
 		onActionFail: function(obj) {
 			var failResponse = {
@@ -297,6 +314,7 @@
 				status: 'fail'
 			};
 			ActionResponse.writeResponse(this._outStream, failResponse);
+			this._outStream.flush();
 		}
 	};
 
@@ -306,11 +324,16 @@
 		}
 		var serverSocket = new ServerSocket(socketFactory);
 		serverSocket.create();
+		return serverSocket;
 	}
 
 	QUnit.ServerSocket = ServerSocket;
+	QUnit.ServerSocketListener = ServerSocketListener;
 	QUnit.DataPackageAnalyzer = DataPackageAnalyzer;
 	QUnit.strConverter = strConverter;
 	QUnit.ActionRunner = ActionRunner;
+	QUnit.ActionResponse = ActionResponse;
 	QUnit.runServer = runServer;
+
+	window.runServer = runServer;
 }());

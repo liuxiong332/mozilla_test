@@ -186,11 +186,76 @@ QUnit.test('action object parse', function(assert) {
 	actionRunner.runAction(obj2);
 });
 
-QUnit.test('test JSRun', function(assert) {
-	expect(0);
-	QUnit.ActionRunner.runJSFile('chrome://mozilla_test/content/js_res.js');
-});
+// QUnit.test('test JSRun', function(assert) {
+// 	expect(0);
+// 	QUnit.ActionRunner.runJSFile('chrome://mozilla_test/content/js_res.js');
+// });
 
-QUnit.test('run server test', function(assert) {
-	QUnit.runServer();
+QUnit.asyncTest('run server test', function(assert) {
+	var serverSocket = QUnit.runServer();
+
+	serverSocket.onAcceptedHook = function(socket) {
+		socket.setCloseListener(function() {
+			clientClose();
+		});
+	};
+	var clientSockets = [];
+	var openSocketNum = 0;
+
+	function clientClose() {
+		if(--openSocketNum > 0)
+			return ;
+		for(var i = 0; i < clientSockets.length; ++i)
+			clientSockets[i].close(0);
+		serverSocket.close();
+		QUnit.start();
+	}
+
+	for(var i = 0; i < 3; ++i) {
+		clientSockets.push(createOneClient());
+		++ openSocketNum;
+	}
+
+	function createOneClient() {
+		var clientSocket = QUnit.createNewLocalSocket(8888);
+		var outStream = clientSocket.openOutputStream(0, 0, 0).QueryInterface(
+					QUnit.Ci.nsIAsyncOutputStream);
+		var inStream = clientSocket.openInputStream(0, 0, 0).QueryInterface(
+					QUnit.Ci.nsIAsyncInputStream);
+		var actionList = [
+			{action: 'addTest', args: {
+				files: ['chrome://mozilla_test/content/js_res.js']
+			}}
+		];
+		var actionResponse = {action: 'addTest', status: 'ok'};
+		var index = 0;
+
+		var inStreamCallback = {
+			onInputStreamReady: function(stream) {
+				var analyzer = new QUnit.DataPackageAnalyzer(null, this);
+				analyzer.onInputStreamReady(stream);
+			},
+			onDataReady: function(obj) {
+				assert.deepEqual(actionResponse, obj);
+			}
+		};
+
+		var outStreamCallback = {
+			onOutputStreamReady: function(outStream) {
+				function writeActions() {
+					for(var i = 0; i < actionList.length; ++i) {
+						QUnit.ActionResponse.writeResponse(outStream, actionList[i]);
+					}
+				}
+				for(var i = 0; i < 2; ++i)
+					writeActions();
+				outStream.close();
+			}
+		};
+		var mainThread = QUnit.ServerSocketListener.mainThread;
+		inStream.asyncWait(inStreamCallback, 0, 0, mainThread);
+		outStream.asyncWait(outStreamCallback, 0, 0, mainThread);
+		return clientSocket;
+	}
+
 });
