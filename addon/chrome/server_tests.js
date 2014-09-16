@@ -173,7 +173,7 @@ QUnit.test('action object parse', function(assert) {
 			assert.strictEqual(files[i], baseDir + fileList[i]);
 		}
 	}
-
+	var oldRunFiles = ActionRunner.runFiles;
 	ActionRunner.runFiles = assertFiles.bind(null, '');
 	actionRunner.runAction(obj1);
 
@@ -184,6 +184,8 @@ QUnit.test('action object parse', function(assert) {
 	};
 	ActionRunner.runFiles = assertFiles.bind(null, baseDir + '/');
 	actionRunner.runAction(obj2);
+
+	ActionRunner.runFiles = oldRunFiles;
 });
 
 // QUnit.test('test JSRun', function(assert) {
