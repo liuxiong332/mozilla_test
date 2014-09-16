@@ -3,10 +3,13 @@ var fs = require('fs');
 var net = require('net');
 var child_process = require('child_process');
 var readline = require('readline');
+var assert = require('assert');
 
 var envConfig = {
   thunderbirdPath: '\"%ProgramFiles(x86)%\\Mozilla' +
-    '\ Thunderbird\\Thunderbird.exe\"',
+    ' Thunderbird\\thunderbird.exe\"',
+  thunderbirdPathSpawn: 'C:/Program\ Files\ (x86)/Mozilla' +
+  '\ Thunderbird/thunderbird.exe',
   chromeFilePath: 'chrome://mozilla_test/content/index.html'
 };
 
@@ -42,15 +45,69 @@ function generateActionBuffer() {
   return packageBuffer;
 }
 
+function DataParser(callback) {
+  this._buffer = null;
+  this._dataSize = 0;
+  this._callback = callback;
+  this._state = DataParser.NEED_HEADER_STATUS;
+}
+DataParser.NEED_HEADER_STATUS = 0;
+DataParser.NEED_BODY_STATUS = 1;
+DataParser.headerBuffer = new Buffer('mozilla_test');
+DataParser.prototype = {
+  parseHeader: function() {
+    var buffer = this._buffer;
+    var header = DataParser.headerBuffer;
+    if(buffer.length >= header.length + 4) {
+      this._dataSize = buffer.readInt32BE(header.length);
+      this._state = DataParser.NEED_BODY_STATUS;
+      this._buffer = buffer.slice(header.length + 4);
+      return true;
+    }
+    return false;
+  },
+  parseBody: function() {
+    var buffer = this._buffer;
+    if(buffer.length >= this._dataSize) {
+      var obj = JSON.parse(buffer.toString('utf8', 0, this._dataSize));
+      this._callback(obj);
+      this._buffer = buffer.slice(this._dataSize);
+      return true;
+    }
+    return false;
+  },
+  onDataReady: function(buffer) {
+    var res = true;
+    if(this._buffer)
+      this._buffer = Buffer.concat([this._buffer, buffer]);
+    else
+      this._buffer = buffer;
+    while(this._buffer.length>0 && res) {
+      switch(this._state) {
+        case DataParser.NEED_HEADER_STATUS: {
+          res = this.parseHeader();
+          break;
+        }
+        case DataParser.NEED_BODY_STATUS: {
+          res = this.parseBody();
+          break;
+        }
+      }
+    }
+  }
+};
 
 function startClient() {
   var clientSocket = net.connect({port: 8888}, function() {
-    clientSocket.on('data', function(buffer) {
-      var header = new Buffer('mozilla_test');
-      var statusBuf = buffer.slice(header.length + 4);
-      var obj = JSON.parse(statusBuf.toString());
+
+    var dataParser = new DataParser(function(obj) {
       console.log('status of action' + obj.action + ' is ' + obj.status);
       clientSocket.end();
+    });
+
+    clientSocket.on('data', function(buffer) {
+      console.log('get response data');
+      dataParser.onDataReady(buffer);
     });
 
     clientSocket.on('error', function(error) {
@@ -64,14 +121,18 @@ function startClient() {
 }
 
 function requestAction() {
-  var child = child_process.exec(getStartThunderbirdCmd(),
-    function(err, stdout, stderr) {
-    if(err) {
-      console.log(err);
-    }
-    console.log('stdout: ' + stdout);
-    console.log('stderr: ' + stderr);
+  var child = child_process.spawn(envConfig.thunderbirdPathSpawn,
+    ['-chrome', envConfig.chromeFilePath, '-jsconsole'], {
+    detached: true,
+    env: process.env,
+    cwd: process.cwd,
+    stdio: ['ignore', 'ignore', 'ignore']
   });
+  child.on('error', function(err) {
+    console.log(err);
+  });
+  child.unref();
+//  child.disconnect();
   startClient();
 }
 
