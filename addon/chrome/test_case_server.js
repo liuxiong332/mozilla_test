@@ -143,7 +143,9 @@
 		analyzeHeader: function(binaryInStream) {
 			var packageHeader = "mozilla_test";
 			var headerBytes = packageHeader.length + 4;
-			if(binaryInStream.available() > headerBytes) {
+			log('DataPackageAnalyzer.analyzeHeader available = ' +
+				binaryInStream.available() + ' header = ' + headerBytes);
+			if(binaryInStream.available() >= headerBytes) {
 				var headerArray = binaryInStream.readByteArray(packageHeader.length);
 				var headerStr = strConverter.convertFromByteArray(headerArray);
 				if(headerStr !== packageHeader)
@@ -157,6 +159,8 @@
 			return false;
 		},
 		analyzeData: function(binaryInStream) {
+			log('DataPackageAnalyzer.analyzeHeader available = ' +
+				binaryInStream.available() + ' data = ' + this._dataSize);
 			if(binaryInStream.available() >= this._dataSize) {
 				var byteArray = binaryInStream.readByteArray(this._dataSize);
 				var str = strConverter.convertFromByteArray(byteArray);
@@ -178,6 +182,8 @@
 			  NS_BASE_STREAM_CLOSED exception
 			 */
 			try {
+				log('onInputStreamReady available() is ' +
+					binaryInStream.available() + ' status is ' + this._analyzeState);
 				while(binaryInStream.available()>0 && res) {
 					switch(this._analyzeState) {
 						case DataPackageAnalyzer.STATE_NEED_HEADER: {
@@ -293,8 +299,8 @@
 		binaryOutStream.writeByteArray(bodyBytes, bodyBytes.length);
 	};
 	ActionResponse.writeResponse = function(outStream, obj) {
-		var binaryOutStream = QUnit.Cc['@mozilla.org/binaryoutputstream;1']
-				.createInstance(QUnit.Ci.nsIBinaryOutputStream);
+		var binaryOutStream = Cc['@mozilla.org/binaryoutputstream;1']
+				.createInstance(Ci.nsIBinaryOutputStream);
 		binaryOutStream.setOutputStream(outStream);
 		ActionResponse.writePackageData(obj, binaryOutStream);
 	};
