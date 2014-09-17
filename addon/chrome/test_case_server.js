@@ -246,9 +246,6 @@
 	};
 
 	ActionRunner.filePathToURI = function(filePath) {
-		var normalPath = 'E:\\workspace\\mozilla_test\\addon\\chrome\\js_res.js';
-		log('the normal file path is ' + normalPath +
-			', the file path is ' + filePath);
 		var file = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsILocalFile);
 		file.initWithPath(filePath);
 		var ioService = Cc['@mozilla.org/network/io-service;1']

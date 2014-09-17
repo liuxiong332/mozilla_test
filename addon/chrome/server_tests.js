@@ -243,7 +243,9 @@ QUnit.asyncTest('run server test', function(assert) {
 // 	expect(0);
 // 	var filePath = 'E:\\workspace\\mozilla_test\\addon\\chrome\\js_res.js';
 // 	var args = {files: [filePath] };
+// 	QUnit.ActionRunner.actionList.addTest(args);
 // 	// var fileURI = QUnit.ActionRunner.filePathToURI(filePath);
 // 	// QUnit.ActionRunner.runJSFile(fileURI);
-// 	QUnit.ActionRunner.actionList.addTest(args);
+// 	// var filePath = 'chrome://mozilla_test/content/js_res.js';
+// 	// QUnit.ActionRunner.runJSFile(filePath);
 // });
