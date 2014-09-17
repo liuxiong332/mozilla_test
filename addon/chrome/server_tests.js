@@ -156,38 +156,6 @@ QUnit.asyncTest("dataPackageAnalyzer test", function(assert) {
 	}
 	QUnit.initClientandServerReady(inputListener, outputListener);
 });
-
-QUnit.test('action object parse', function(assert) {
-	var ActionRunner = QUnit.ActionRunner;
-	var actionRunner = new ActionRunner;
-	var fileList = ['file1', 'file2', 'file3'];
-	var obj1 = {
-		action: 'addTest',
-		args: { files: fileList.slice(0) }
-	};
-
-	function	assertFiles(baseDir, files) {
-		assert.strictEqual(files.length, fileList.length);
-		var length = files.length;
-		for(var i = 0; i < length; ++i) {
-			assert.strictEqual(files[i], baseDir + fileList[i]);
-		}
-	}
-	var oldRunFiles = ActionRunner.runFiles;
-	ActionRunner.runFiles = assertFiles.bind(null, '');
-	actionRunner.runAction(obj1);
-
-	var baseDir = 'mozilla';
-	var obj2 = {
-		action: 'addTest',
-		args: { files: fileList.slice(0), baseDir: baseDir}
-	};
-	ActionRunner.runFiles = assertFiles.bind(null, baseDir + '/');
-	actionRunner.runAction(obj2);
-
-	ActionRunner.runFiles = oldRunFiles;
-});
-
 // QUnit.test('test JSRun', function(assert) {
 // 	expect(0);
 // 	QUnit.ActionRunner.runJSFile('chrome://mozilla_test/content/js_res.js');
@@ -204,12 +172,18 @@ QUnit.asyncTest('run server test', function(assert) {
 	var clientSockets = [];
 	var openSocketNum = 0;
 
+	var oldRunJSFile = QUnit.ActionRunner.runJSFile;
+	//forbid test program to run the fake js file
+	QUnit.ActionRunner.runJSFile = function() {};
+
 	function clientClose() {
 		if(--openSocketNum > 0)
 			return ;
 		for(var i = 0; i < clientSockets.length; ++i)
 			clientSockets[i].close(0);
 		serverSocket.close();
+		//restore the origin runJSFile function
+		QUnit.ActionRunner.runJSFile = oldRunJSFile;
 		QUnit.start();
 	}
 
@@ -218,17 +192,20 @@ QUnit.asyncTest('run server test', function(assert) {
 		++ openSocketNum;
 	}
 
+	var actionList = [
+		{action: 'addTest', args: {
+			//fake files path just for test
+			files: ['c:\\js_res.js']
+		}}
+	];
+
 	function createOneClient() {
 		var clientSocket = QUnit.createNewLocalSocket(8888);
 		var outStream = clientSocket.openOutputStream(0, 0, 0).QueryInterface(
 					QUnit.Ci.nsIAsyncOutputStream);
 		var inStream = clientSocket.openInputStream(0, 0, 0).QueryInterface(
 					QUnit.Ci.nsIAsyncInputStream);
-		var actionList = [
-			{action: 'addTest', args: {
-				files: ['chrome://mozilla_test/content/js_res.js']
-			}}
-		];
+
 		var actionResponse = {action: 'addTest', status: 'ok'};
 		var index = 0;
 
@@ -261,3 +238,12 @@ QUnit.asyncTest('run server test', function(assert) {
 	}
 
 });
+
+// QUnit.test('run local file', function(assert) {
+// 	expect(0);
+// 	var filePath = 'E:\\workspace\\mozilla_test\\addon\\chrome\\js_res.js';
+// 	var args = {files: [filePath] };
+// 	// var fileURI = QUnit.ActionRunner.filePathToURI(filePath);
+// 	// QUnit.ActionRunner.runJSFile(fileURI);
+// 	QUnit.ActionRunner.actionList.addTest(args);
+// });

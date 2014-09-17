@@ -241,12 +241,21 @@
     loader.loadSubScript(fileUrl);
 	};
 
-	ActionRunner.runFiles = function(files) {
-		var length = files.length;
-		for(var i = 0; i < length; ++i) {
-			this.runJSFile(files[i]);
-		}
+	ActionRunner.runFiles = function(fileUris) {
+		fileUris.forEach(this.runJSFile);
 	};
+
+	ActionRunner.filePathToURI = function(filePath) {
+		var normalPath = 'E:\\workspace\\mozilla_test\\addon\\chrome\\js_res.js';
+		log('the normal file path is ' + normalPath +
+			', the file path is ' + filePath);
+		var file = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsILocalFile);
+		file.initWithPath(filePath);
+		var ioService = Cc['@mozilla.org/network/io-service;1']
+			.getService(Ci.nsIIOService);
+		var uri = ioService.newFileURI(file);
+		return uri.spec;
+	}
 
 	ActionRunner.actionList = {
 		start: function() {
@@ -254,16 +263,10 @@
 			return true;
 		},
 		addTest: function(args) {
-			var baseDir = args.baseDir;
 			var files = args.files;
 			if(!(files && Array.isArray(files))) 	return false;
-			if(baseDir) {
-				if(!/\/$/.test(baseDir))	baseDir += '/';
-				var length = files.length;
-				for(var i = 0; i < length; ++i)
-					files[i] = baseDir + files[i];
-			}
-			ActionRunner.runFiles(files);
+			var fileUris = files.map(ActionRunner.filePathToURI);
+			ActionRunner.runFiles(fileUris);
 			return true;
 		}
 	};
