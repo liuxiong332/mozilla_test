@@ -13,6 +13,8 @@
 	var Cr = Components.results;
 
 	function log(message) {
+		var needLog = false;
+		if(!needLog)	return false;
 		var console = Cc["@mozilla.org/consoleservice;1"]
 			.getService(Ci.nsIConsoleService);
 		console.logStringMessage(message);
