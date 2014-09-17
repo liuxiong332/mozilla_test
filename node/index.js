@@ -3,6 +3,7 @@ var fs = require('fs');
 var net = require('net');
 var child_process = require('child_process');
 var readline = require('readline');
+var path = require('path');
 var assert = require('assert');
 
 var envConfig = {
@@ -12,6 +13,16 @@ var envConfig = {
   '\ Thunderbird/thunderbird.exe',
   chromeFilePath: 'chrome://mozilla_test/content/index.html'
 };
+
+function getAbsoluteFilePath(filePath) {
+  var absolutePath = filePath;
+  if(!/^\w:/.test(filePath)) {
+    var cwd = process.cwd();
+    if(!/\\$/.test(cwd))  cwd += '\\';
+    absolutePath = cwd + filePath;
+  }
+  return path.normalize(absolutePath);
+}
 
 function getStartThunderbirdCmd() {
   var startThunderbirdCmd = envConfig.thunderbirdPath + ' -chrome ' +
@@ -27,13 +38,19 @@ function getFilePathFromArgs() {
   if(!filePath) {
     throw new Error('please specific the file path');
   }
+  filePath = getAbsoluteFilePath(filePath);
+  console.log('the file path is ' + filePath);
   return filePath;
 }
 
 function generateActionBuffer() {
+
   function generateActionObj() {
     var fileBuffer = fs.readFileSync(getFilePathFromArgs());
     var fileListObj = JSON.parse(fileBuffer.toString());
+    var fileList = fileListObj.files;
+    fileList = fileList.map(getAbsoluteFilePath);
+    fileListObj = {files: fileList};
     return { action: 'addTest', args: fileListObj };
   }
   var actionBuffer = new Buffer( JSON.stringify(generateActionObj()) );
@@ -125,7 +142,7 @@ function requestAction() {
     ['-chrome', envConfig.chromeFilePath, '-jsconsole'], {
     detached: true,
     env: process.env,
-    cwd: process.cwd,
+    cwd: process.cwd(),
     stdio: ['ignore', 'ignore', 'ignore']
   });
   child.on('error', function(err) {
