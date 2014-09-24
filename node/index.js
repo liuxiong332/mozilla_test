@@ -194,8 +194,8 @@ function endThunderbirdRun(callback) {
   });
 }
 
-if(argsAnalyzer.getNoEndThunderbirdFlag)
-  requestAction();
+if(argsAnalyzer.getNoEndThunderbirdFlag())
+  startClient();
 else
   endThunderbirdRun(requestAction);
 
