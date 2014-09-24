@@ -24,6 +24,14 @@ function getAbsoluteFilePath(filePath) {
   return path.normalize(absolutePath);
 }
 
+function getAbsoluteFilePathByDir(dir, filePath) {
+  if(/^\w:/.test(filePath)) return filePath;
+  var absPath = path.join(dir, filePath);
+  path.normalize(absPath);
+  console.log(absPath);
+  return absPath;
+}
+
 function getStartThunderbirdCmd() {
   var startThunderbirdCmd = envConfig.thunderbirdPath + ' -chrome ' +
     envConfig.chromeFilePath + ' -jsconsole';
@@ -46,10 +54,13 @@ function getFilePathFromArgs() {
 function generateActionBuffer() {
 
   function generateActionObj() {
-    var fileBuffer = fs.readFileSync(getFilePathFromArgs());
+    var configPath = getFilePathFromArgs();
+    var fileBuffer = fs.readFileSync(configPath);
     var fileListObj = JSON.parse(fileBuffer.toString());
     var fileList = fileListObj.files;
-    fileList = fileList.map(getAbsoluteFilePath);
+
+    var configDir = path.dirname(configPath);
+    fileList = fileList.map( getAbsoluteFilePathByDir.bind(null, configDir) );
     fileListObj = {files: fileList};
     return { action: 'addTest', args: fileListObj };
   }
