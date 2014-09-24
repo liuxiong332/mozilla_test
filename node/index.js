@@ -177,7 +177,6 @@ function requestAction() {
     console.log(err);
   });
   child.unref();
-//  child.disconnect();
   startClient();
 }
 
