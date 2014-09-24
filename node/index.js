@@ -39,9 +39,26 @@ function getStartThunderbirdCmd() {
   return startThunderbirdCmd;
 }
 
-function getFilePathFromArgs() {
+/*the Args Analyzer is used for analyze the arguments*/
+function ArgsAnalyzer() {
   var args = process.argv.slice(2);
-  var filePath = args[0];
+  this.filePath = args[0];
+  this.noEndThunderbird = args.some(function(arg) {
+    return arg === '-noend';
+  });
+}
+ArgsAnalyzer.prototype = {
+  getFilePath: function() {
+    return this.filePath;
+  },
+  getNoEndThunderbirdFlag: function() {
+    return this.noEndThunderbird;
+  }
+};
+var argsAnalyzer = new ArgsAnalyzer;
+
+function getFilePathFromArgs() {
+  var filePath = argsAnalyzer.getFilePath();
 
   if(!filePath) {
     throw new Error('please specific the file path');
@@ -177,5 +194,8 @@ function endThunderbirdRun(callback) {
   });
 }
 
-endThunderbirdRun(requestAction);
+if(argsAnalyzer.getNoEndThunderbirdFlag)
+  requestAction();
+else
+  endThunderbirdRun(requestAction);
 
