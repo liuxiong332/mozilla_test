@@ -5,6 +5,7 @@ var child_process = require('child_process');
 var readline = require('readline');
 var path = require('path');
 var assert = require('assert');
+var fs = require('fs');
 
 var envConfig = {
   thunderbirdPath: '\"%ProgramFiles(x86)%\\Mozilla' +
@@ -32,22 +33,27 @@ function getAbsoluteFilePathByDir(dir, filePath) {
   return absPath;
 }
 
-function getStartThunderbirdCmd() {
-  var startThunderbirdCmd = envConfig.thunderbirdPath + ' -chrome ' +
-    envConfig.chromeFilePath + ' -jsconsole';
-  console.log(startThunderbirdCmd);
-  return startThunderbirdCmd;
-}
+// function getStartThunderbirdCmd() {
+//   var startThunderbirdCmd = envConfig.thunderbirdPath + ' -chrome ' +
+//     envConfig.chromeFilePath + ' -jsconsole';
+//   console.log(startThunderbirdCmd);
+//   return startThunderbirdCmd;
+// }
 
 /*the Args Analyzer is used for analyze the arguments*/
 function ArgsAnalyzer() {
-  var args = process.argv.slice(2);
-  this.filePath = args[0];
-  this.noEndThunderbird = args.some(function(arg) {
+  var jsFilePath = process.argv[1]
+  var filePath = process.argv[2];
+  this.noEndThunderbird = process.argv.some(function(arg) {
     return arg === '-noend';
   });
+  this.filePath = getAbsoluteFilePath(filePath);
+  this.jsFilePath = getAbsoluteFilePath(jsFilePath);
 }
 ArgsAnalyzer.prototype = {
+  getJSFilePath: function() {
+    return this.jsFilePath;
+  },
   getFilePath: function() {
     return this.filePath;
   },
@@ -57,21 +63,10 @@ ArgsAnalyzer.prototype = {
 };
 var argsAnalyzer = new ArgsAnalyzer;
 
-function getFilePathFromArgs() {
-  var filePath = argsAnalyzer.getFilePath();
-
-  if(!filePath) {
-    throw new Error('please specific the file path');
-  }
-  filePath = getAbsoluteFilePath(filePath);
-  console.log('the file path is ' + filePath);
-  return filePath;
-}
-
 function generateActionBuffer() {
 
   function generateActionObj() {
-    var configPath = getFilePathFromArgs();
+    var configPath = argsAnalyzer.getFilePath();
     var fileBuffer = fs.readFileSync(configPath);
     var fileListObj = JSON.parse(fileBuffer.toString());
     var fileList = fileListObj.files;
@@ -155,18 +150,36 @@ function startClient() {
       dataParser.onDataReady(buffer);
     });
 
-    clientSocket.on('error', function(error) {
-      clientSocket.destroy();
-      console.log('rise a error ' + error + ', prepare to restart...');
-      startClient();
-    });
-
     clientSocket.write(generateActionBuffer());
+  });
+
+  clientSocket.on('error', function(error) {
+    clientSocket.destroy();
+    console.log('rise a error ' + error + ', after 1s, prepare to restart...');
+    setTimeout(startClient, 1000);
   });
 }
 
+function getJSConfigFilePath() {
+  var jsFilePath = argsAnalyzer.getJSFilePath();
+  return path.join(path.dirname(jsFilePath), 'config.json');
+}
+
+function getThunderbirdPath() {
+  var configFilePath = getJSConfigFilePath();
+  if(fs.existsSync(configFilePath)) {
+    var content = fs.readFileSync(configFilePath, {encoding: 'utf8'});
+    var obj = JSON.parse(content);
+    if(obj.thunderbirdPath)
+      return obj.thunderbirdPath;
+  }
+  return envConfig.thunderbirdPathSpawn;
+}
+
 function requestAction() {
-  var child = child_process.spawn(envConfig.thunderbirdPathSpawn,
+  var thunderbirdPath = getThunderbirdPath();
+  console.log('the thunderbird path is ' + thunderbirdPath);
+  var child = child_process.spawn(thunderbirdPath,
     ['-chrome', envConfig.chromeFilePath, '-jsconsole'], {
     detached: true,
     env: process.env,
