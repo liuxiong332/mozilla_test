@@ -8,10 +8,7 @@ var assert = require('assert');
 var fs = require('fs');
 
 var envConfig = {
-  thunderbirdPath: '\"%ProgramFiles(x86)%\\Mozilla' +
-    ' Thunderbird\\thunderbird.exe\"',
-  thunderbirdPathSpawn: 'C:/Program\ Files\ (x86)/Mozilla' +
-  '\ Thunderbird/thunderbird.exe',
+  runBoltPath: '..\\..\\..\\..\\..\\..\\bolt-test.bat',
   chromeFilePath: 'chrome://mozilla_test/content/index.html'
 };
 
@@ -33,12 +30,6 @@ function getAbsoluteFilePathByDir(dir, filePath) {
   return absPath;
 }
 
-// function getStartThunderbirdCmd() {
-//   var startThunderbirdCmd = envConfig.thunderbirdPath + ' -chrome ' +
-//     envConfig.chromeFilePath + ' -jsconsole';
-//   console.log(startThunderbirdCmd);
-//   return startThunderbirdCmd;
-// }
 
 /*the Args Analyzer is used for analyze the arguments*/
 function ArgsAnalyzer() {
@@ -165,22 +156,16 @@ function getJSConfigFilePath() {
   return path.join(path.dirname(jsFilePath), 'config.json');
 }
 
-function getThunderbirdPath() {
-  var configFilePath = getJSConfigFilePath();
-  if(fs.existsSync(configFilePath)) {
-    var content = fs.readFileSync(configFilePath, {encoding: 'utf8'});
-    var obj = JSON.parse(content);
-    if(obj.thunderbirdPath)
-      return obj.thunderbirdPath;
-  }
-  return envConfig.thunderbirdPathSpawn;
+function getRunBoltBatPath() {
+  var jsFilePath = argsAnalyzer.getJSFilePath();
+  return path.normalize( 
+    path.join(path.dirname(jsFilePath), envConfig.runBoltPath));
 }
 
 function requestAction() {
-  var thunderbirdPath = getThunderbirdPath();
-  console.log('the thunderbird path is ' + thunderbirdPath);
-  var child = child_process.spawn(thunderbirdPath,
-    ['-chrome', envConfig.chromeFilePath, '-jsconsole'], {
+  var boltPath = getRunBoltBatPath();
+  console.log('the run bolt path is ' + boltPath);
+  var child = child_process.spawn(boltPath, {
     detached: true,
     env: process.env,
     cwd: process.cwd(),
@@ -193,21 +178,5 @@ function requestAction() {
   startClient();
 }
 
-
-function endThunderbirdRun(callback) {
-  var taskListProc = child_process.exec('tasklist',
-    function(err, stdout, stderr) {
-    var result = /thunderbird\.exe\s+(\d+)/.exec(stdout);
-    if(!result) return callback();
-    var killCmd = 'taskkill /F /PID ' + result[1];
-    child_process.exec(killCmd, function(err, stdout, stderr) {
-      callback();
-    });
-  });
-}
-
-if(argsAnalyzer.getNoEndThunderbirdFlag())
-  startClient();
-else
-  endThunderbirdRun(requestAction);
+requestAction();
 
